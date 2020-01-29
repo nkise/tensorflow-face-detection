@@ -1,24 +1,22 @@
-#!/usr/bin/python
-# -*- coding: utf-8 -*-
-# pylint: disable=C0103
-# pylint: disable=E1101
-
 import sys
 import time
 import numpy as np
 import tensorflow as tf
 import cv2
-
+import os, glob
 from utils import label_map_util
 from utils import visualization_utils_color as vis_util
 
 # Path to frozen detection graph. This is the actual model that is used for the object detection.
-PATH_TO_CKPT = './model/frozen_inference_graph_face.pb'
+PATH_TO_CKPT = './model/frozen_inference_graph_1227.pb'
 
 # List of the strings that is used to add correct label for each box.
-PATH_TO_LABELS = './protos/face_label_map.pbtxt'
+PATH_TO_LABELS = './protos/ball_map.pbtxt'
 
 NUM_CLASSES = 2
+
+avr_time = 0
+count = 0
 
 label_map = label_map_util.load_labelmap(PATH_TO_LABELS)
 categories = label_map_util.convert_label_map_to_categories(label_map, max_num_classes=NUM_CLASSES, use_display_name=True)
@@ -39,7 +37,11 @@ class TensoflowFaceDector(object):
 
 
         with self.detection_graph.as_default():
-            config = tf.ConfigProto()
+            # config = tf.ConfigProto()
+            # config.gpu_options.allow_growth = True
+            config = tf.ConfigProto(
+                device_count={'GPU': 0}
+            )
             config.gpu_options.allow_growth = True
             self.sess = tf.Session(graph=self.detection_graph, config=config)
             self.windowNotSet = True
@@ -49,6 +51,8 @@ class TensoflowFaceDector(object):
         """image: bgr image
         return (boxes, scores, classes, num_detections)
         """
+        global avr_time
+        global count
 
         image_np = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
@@ -71,36 +75,18 @@ class TensoflowFaceDector(object):
             feed_dict={image_tensor: image_np_expanded})
         elapsed_time = time.time() - start_time
         print('inference time cost: {}'.format(elapsed_time))
-
+        avr_time += elapsed_time
+        count += 1
         return (boxes, scores, classes, num_detections)
 
-
-if __name__ == "__main__":
-    import sys
-    if len(sys.argv) != 2:
-        print ("usage:%s (cameraID | filename) Detect faces\
- in the video example:%s 0"%(sys.argv[0], sys.argv[0]))
-        exit(1)
-
-    try:
-    	camID = int(sys.argv[1])
-    except:
-    	camID = sys.argv[1]
-    
+def main():
+    images = glob.glob(os.path.join('bad_images/', '*.jpg'))
     tDetector = TensoflowFaceDector(PATH_TO_CKPT)
-
-    cap = cv2.VideoCapture(camID)
-    windowNotSet = True
-    while True:
-        ret, image = cap.read()
-        if ret == 0:
-            break
-
+    for index in range(len(images)):
+        image = cv2.imread(images[index])
         [h, w] = image.shape[:2]
-        print (h, w)
-        image = cv2.flip(image, 1)
-
         (boxes, scores, classes, num_detections) = tDetector.run(image)
+        id = images[index].split('/')[1].split('.')[0] + ".jpg"
 
         vis_util.visualize_boxes_and_labels_on_image_array(
             image,
@@ -110,14 +96,9 @@ if __name__ == "__main__":
             category_index,
             use_normalized_coordinates=True,
             line_thickness=4)
+        cv2.imwrite('TEST/{}'.format(id), image)
+        print(avr_time/count)
 
-        if windowNotSet is True:
-            cv2.namedWindow("tensorflow based (%d, %d)" % (w, h), cv2.WINDOW_NORMAL)
-            windowNotSet = False
 
-        cv2.imshow("tensorflow based (%d, %d)" % (w, h), image)
-        k = cv2.waitKey(1) & 0xff
-        if k == ord('q') or k == 27:
-            break
-
-    cap.release()
+if __name__ == '__main__':
+    main()
